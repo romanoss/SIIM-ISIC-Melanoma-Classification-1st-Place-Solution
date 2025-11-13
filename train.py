@@ -208,7 +208,15 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
 
     dataset_train = MelanomaDataset(df_train, 'train', meta_features, transform=transforms_train)
     dataset_valid = MelanomaDataset(df_valid, 'valid', meta_features, transform=transforms_val)
-    train_loader = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, sampler=RandomSampler(dataset_train), num_workers=args.num_workers)
+    train_loader = torch.utils.data.DataLoader(
+        dataset_train, 
+        batch_size=args.batch_size, 
+        sampler=RandomSampler(dataset_train), 
+        num_workers=args.num_workers,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+    )
     valid_loader = torch.utils.data.DataLoader(dataset_valid, batch_size=args.batch_size, num_workers=args.num_workers)
 
     model = ModelClass(
