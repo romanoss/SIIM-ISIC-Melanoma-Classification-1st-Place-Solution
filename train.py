@@ -14,7 +14,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
-from torch.optim.lr_scheduler import CosineAnnealingLR
+#from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
 from util import GradualWarmupSchedulerV2
 # import apex
 # from apex import amp
@@ -54,6 +55,21 @@ def set_seed(seed=0):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
+
+
+def upsample_train(df_train, upsample_times=16):
+    df_mela = df_train[df_train["target"] == 6]
+    # return df_train with concatenated df_mela for 16 times - mix it in
+    if df_mela.empty:
+        raise ValueError("No rows with target == 6 found in df_train")
+
+    # Concatenate multiple copies of melanoma samples
+    df_upsampled = pd.concat([df_train] + [df_mela.copy() for _ in range(upsample_times)], ignore_index=True)
+
+    # Shuffle to mix up the duplicates with other samples
+    df_upsampled = df_upsampled.sample(frac=1.0, random_state=42).reset_index(drop=True)
+
+    return df_upsampled
 
 
 def train_epoch(model, loader, optimizer, scaler):
@@ -183,6 +199,13 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         df_train = df[df['fold'] != fold]
         df_valid = df[df['fold'] == fold]
 
+    upsample_times=8
+    print(f"upsampling df_train melanomas times {upsample_times} len {len(df_train)}")
+    df_train = upsample_train(df_train, upsample_times=upsample_times) # orig psample_times=16
+    print(f"upsampled df_train melanomas times {upsample_times} len {len(df_train)}")
+    print("value counts", df_train["target"].value_counts())
+    print()
+
     dataset_train = MelanomaDataset(df_train, 'train', meta_features, transform=transforms_train)
     dataset_valid = MelanomaDataset(df_valid, 'valid', meta_features, transform=transforms_val)
     train_loader = torch.utils.data.DataLoader(dataset_train, batch_size=args.batch_size, sampler=RandomSampler(dataset_train), num_workers=args.num_workers)
@@ -220,8 +243,13 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         model = nn.DataParallel(model)
 
 #     scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.n_epochs - 1)
-    scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.n_epochs - 1)
-    scheduler_warmup = GradualWarmupSchedulerV2(optimizer, multiplier=10, total_epoch=1, after_scheduler=scheduler_cosine)
+    #scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.n_epochs - 1)
+    #scheduler_warmup = GradualWarmupSchedulerV2(optimizer, multiplier=10, total_epoch=1, after_scheduler=scheduler_cosine)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=int(args.n_epochs * 1.4),  
+            T_mult=1
+        )
     
     print(len(dataset_train), len(dataset_valid))
 
@@ -237,8 +265,11 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         with open(os.path.join(args.log_dir, f'log_{args.kernel_type}.txt'), 'a') as appender:
             appender.write(content + '\n')
 
-        scheduler_warmup.step()    
-        if epoch==2: scheduler_warmup.step() # bug workaround   
+        #scheduler_warmup.step()    
+        #if epoch==2: scheduler_warmup.step() # bug workaround 
+        scheduler.step()  
+
+        print(f"Epoch {epoch}: LR={scheduler.get_last_lr()[0]:.6f}")
             
         if auc > auc_max:
             print('auc_max ({:.6f} --> {:.6f}). Saving model ...'.format(auc_max, auc))

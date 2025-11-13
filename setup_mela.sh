@@ -17,3 +17,7 @@ do
   rm jpeg-melanoma-${input_size}x${input_size}.zip jpeg-isic2019-${input_size}x${input_size}.zip
 done
 
+apt-get update -qq
+apt-get install -y htop sysstat
+
+
