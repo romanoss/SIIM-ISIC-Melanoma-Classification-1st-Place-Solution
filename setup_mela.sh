@@ -2,6 +2,7 @@ chmod 777 setup_mela.sh
 chmod 777 start_train.sh
 
 pip install kaggle
+pip install -U albumentations albucore
 
 mkdir /root/.config/kaggle
 cp kaggle.json /root/.config/kaggle

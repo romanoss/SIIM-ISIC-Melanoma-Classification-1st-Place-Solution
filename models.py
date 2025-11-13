@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 #import geffnet
 from resnest.torch import resnest101
-from pretrainedmodels import se_resnext101_32x4d
+#from pretrainedmodels import se_resnext101_32x4d
 import timm
 import torch.nn.functional as F
 
