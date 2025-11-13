@@ -8,6 +8,36 @@ from torch.utils.data import Dataset
 
 from tqdm import tqdm
 
+import random
+
+class SprinkleDropout(albumentations.ImageOnlyTransform):
+    def __init__(self, min_sprinkles=5, max_sprinkles=12, size_ratio=0.03, fill_value=0, always_apply=False, p=0.7):
+        """
+        Randomly drops small rectangles ("sprinkles") on the image.
+
+        Args:
+            min_sprinkles: Minimum number of small holes.
+            max_sprinkles: Maximum number of small holes.
+            size_ratio: Relative size of each sprinkle (fraction of image height/width).
+            fill_value: Pixel fill value (0 = black, or could be random color).
+            p: Probability of applying this transform.
+        """
+        super().__init__(always_apply, p)
+        self.min_sprinkles = min_sprinkles
+        self.max_sprinkles = max_sprinkles
+        self.size_ratio = size_ratio
+        self.fill_value = fill_value
+
+    def apply(self, img, **params):
+        h, w = img.shape[:2]
+        n_sprinkles = random.randint(self.min_sprinkles, self.max_sprinkles)
+        sprinkle_size = int(min(h, w) * self.size_ratio)
+
+        for _ in range(n_sprinkles):
+            y = random.randint(0, h - sprinkle_size)
+            x = random.randint(0, w - sprinkle_size)
+            img[y:y + sprinkle_size, x:x + sprinkle_size] = self.fill_value
+        return img
 
 class MelanomaDataset(Dataset):
     def __init__(self, csv, mode, meta_features, transform=None):
@@ -48,7 +78,7 @@ class MelanomaDataset(Dataset):
 
 
 
-
+"""
 def get_transforms(image_size):
 
     transforms_train = albumentations.Compose([
@@ -75,6 +105,100 @@ def get_transforms(image_size):
         albumentations.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, border_mode=0, p=0.85),
         albumentations.Resize(image_size, image_size),
         albumentations.Cutout(max_h_size=int(image_size * 0.375), max_w_size=int(image_size * 0.375), num_holes=1, p=0.7),
+        albumentations.Normalize()
+    ])
+
+    transforms_val = albumentations.Compose([
+        albumentations.Resize(image_size, image_size),
+        albumentations.Normalize()
+    ])
+
+    return transforms_train, transforms_val
+"""
+
+def get_transforms(image_size):
+
+    transforms_train = albumentations.Compose([
+        albumentations.Transpose(p=0.5),
+        albumentations.VerticalFlip(p=0.5),
+        albumentations.HorizontalFlip(p=0.5),
+        #albumentations.RandomBrightness(limit=0.2, p=0.75),
+        #albumentations.RandomContrast(limit=0.2, p=0.75),
+        albumentations.RandomBrightnessContrast(
+            brightness_limit=0.2,
+            contrast_limit=0.2,
+            brightness_by_max=True,
+            p=0.75
+        ),
+        albumentations.OneOf([
+            albumentations.MotionBlur(blur_limit=5),
+            albumentations.MedianBlur(blur_limit=5),
+            albumentations.GaussianBlur(blur_limit=5),
+            #albumentations.GaussNoise(variance_limit=(5.0, 30.0)),
+            albumentations.GaussNoise(var_limit=(5, 30), mean=0, p=0.5),
+        ], p=0.7),
+
+        albumentations.OneOf([
+            albumentations.OpticalDistortion(distort_limit=1.0),
+            albumentations.GridDistortion(num_steps=5, distort_limit=1.),
+            albumentations.ElasticTransform(alpha=3),
+        ], p=0.7),
+
+        albumentations.CLAHE(clip_limit=4.0, p=0.7),
+        albumentations.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10, p=0.5),
+        #albumentations.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, border_mode=0, p=0.85),
+        ##albumentations.Affine(
+        ##    translate_percent=(0.1, 0.1),
+        ##    scale=(0.9, 1.1),
+        ##    rotate=(-15, 15),
+        ##    mode=0,
+        ##    p=0.7
+        ##),
+        albumentations.Affine(
+            translate_percent=(0.1, 0.1),
+            scale=(0.9, 1.1),
+            rotate=(-15, 15),
+            interpolation=1,   # 1 = cv2.INTER_LINEAR
+            fit_output=False,  # keep image size
+            p=0.7
+        ),
+        albumentations.Resize(image_size, image_size),
+        #albumentations.Cutout(max_h_size=int(image_size * 0.375), max_w_size=int(image_size * 0.375), num_holes=1, p=0.7),
+        ##albumentations.CoarseDropout(
+        ##    #max_holes=1,
+        ##    #max_height=int(image_size * 0.375),
+        ##    #max_width=int(image_size * 0.375),
+        ##    #min_holes=1,
+        ##    holes_range = (1,1),
+        ##    size_range=(int(image_size * 0.375), int(image_size * 0.375)),
+        ##    fill_value=0,
+        ##    p=0.7
+        ##),
+        ###albumentations.CoarseDropout(
+        ###    max_holes=1,
+        ###    min_holes=1,
+        ###    max_height=int(image_size * 0.375),
+        ###    max_width=int(image_size * 0.375),
+        ###    fill_value=0,
+        ###    mask_fill_value=None,
+        ###    p=0.7
+        ###),
+        #albumentations.CoarseDropout(
+        #    max_holes=1,
+        #    min_holes=1,
+        #    max_height=int(image_size * 0.375),
+        #    max_width=int(image_size * 0.375),
+        #    fill_value=0,
+        #    mask_fill_value=None,
+        #    p=0.7
+        #),
+        SprinkleDropout(
+            min_sprinkles=4,
+            max_sprinkles=12,
+            size_ratio=0.02,   # smaller = finer sprinkles
+            fill_value=0,
+            p=0.7
+        ),
         albumentations.Normalize()
     ])
 
