@@ -16,8 +16,8 @@ from torch.optim import lr_scheduler
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from util import GradualWarmupSchedulerV2
-import apex
-from apex import amp
+# import apex
+# from apex import amp
 from dataset import get_df, get_transforms, MelanomaDataset
 from models import Effnet_Melanoma, Resnest_Melanoma, Seresnext_Melanoma
 
@@ -56,42 +56,54 @@ def set_seed(seed=0):
     torch.backends.cudnn.deterministic = True
 
 
-def train_epoch(model, loader, optimizer):
-
+def train_epoch(model, loader, optimizer, scaler):
+    """
+    Train one epoch using native PyTorch AMP (no Apex).
+    Keeps the same behavior as the original Apex version.
+    """
     model.train()
     train_loss = []
-    bar = tqdm(loader)
-    for (data, target) in bar:
 
+    # scaler = torch.cuda.amp.GradScaler(enabled=args.use_amp)
+    bar = tqdm(loader)
+
+    for (data, target) in bar:
         optimizer.zero_grad()
-        
+
+        # handle meta features if present
         if args.use_meta:
             data, meta = data
             data, meta, target = data.to(device), meta.to(device), target.to(device)
-            logits = model(data, meta)
         else:
             data, target = data.to(device), target.to(device)
-            logits = model(data)        
-        
-        loss = criterion(logits, target)
+            meta = None
 
-        if not args.use_amp:
-            loss.backward()
+        # forward pass under autocast
+        with torch.cuda.amp.autocast(enabled=args.use_amp):
+            logits = model(data, meta) if args.use_meta else model(data)
+            loss = criterion(logits, target)
+
+        # backward pass (scaling if AMP enabled)
+        if args.use_amp:
+            scaler.scale(loss).backward()
+            if args.image_size in [896, 576]:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            scaler.step(optimizer)
+            scaler.update()
         else:
-            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
+            loss.backward()
+            if args.image_size in [896, 576]:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+                optimizer.step()
 
-        if args.image_size in [896,576]:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
-        optimizer.step()
-
+        # bookkeeping
         loss_np = loss.detach().cpu().numpy()
         train_loss.append(loss_np)
         smooth_loss = sum(train_loss[-100:]) / min(len(train_loss), 100)
-        bar.set_description('loss: %.5f, smth: %.5f' % (loss_np, smooth_loss))
+        bar.set_description(f"loss: {loss_np:.5f}, smth: {smooth_loss:.5f}")
 
-    train_loss = np.mean(train_loss)
-    return train_loss
+    return float(np.mean(train_loss))
 
 
 def get_trans(img, I):
@@ -124,7 +136,8 @@ def val_epoch(model, loader, mel_idx, is_ext=None, n_test=1, get_output=False):
                 logits = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 probs = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 for I in range(n_test):
-                    l = model(get_trans(data, I), meta)
+                    with torch.cuda.amp.autocast(enabled=args.use_amp):
+                        l = model(get_trans(data, I), meta)
                     logits += l
                     probs += l.softmax(1)
             else:
@@ -132,7 +145,8 @@ def val_epoch(model, loader, mel_idx, is_ext=None, n_test=1, get_output=False):
                 logits = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 probs = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 for I in range(n_test):
-                    l = model(get_trans(data, I))
+                    with torch.cuda.amp.autocast(enabled=args.use_amp):
+                        l = model(get_trans(data, I))
                     logits += l
                     probs += l.softmax(1)
             logits /= n_test
@@ -182,7 +196,8 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         pretrained=True
     )
     if DP:
-        model = apex.parallel.convert_syncbn_model(model)
+        # model = apex.parallel.convert_syncbn_model(model)
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model = model.to(device)
 
     auc_max = 0.
@@ -192,10 +207,18 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
     model_file3 = os.path.join(args.model_dir, f'{args.kernel_type}_final_fold{fold}.pth')
 
     optimizer = optim.Adam(model.parameters(), lr=args.init_lr)
-    if args.use_amp:
-        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    #if args.use_amp:
+    #    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+    #if DP:
+    #    model = nn.DataParallel(model)
+
+    # Native PyTorch AMP setup
+    scaler = torch.cuda.amp.GradScaler(enabled=args.use_amp)
+
+    # Optional DataParallel wrapping (multi-GPU)
     if DP:
         model = nn.DataParallel(model)
+
 #     scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.n_epochs - 1)
     scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, args.n_epochs - 1)
     scheduler_warmup = GradualWarmupSchedulerV2(optimizer, multiplier=10, total_epoch=1, after_scheduler=scheduler_cosine)
@@ -206,7 +229,7 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         print(time.ctime(), f'Fold {fold}, Epoch {epoch}')
 #         scheduler_warmup.step(epoch - 1)
 
-        train_loss = train_epoch(model, train_loader, optimizer)
+        train_loss = train_epoch(model, train_loader, optimizer, scaler)
         val_loss, acc, auc, auc_20 = val_epoch(model, valid_loader, mel_idx, is_ext=df_valid['is_ext'].values)
 
         content = time.ctime() + ' ' + f'Fold {fold}, Epoch {epoch}, lr: {optimizer.param_groups[0]["lr"]:.7f}, train loss: {train_loss:.5f}, valid loss: {(val_loss):.5f}, acc: {(acc):.4f}, auc: {(auc):.6f}, auc_20: {(auc_20):.6f}.'
@@ -262,7 +285,8 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError()
 
-    DP = len(os.environ['CUDA_VISIBLE_DEVICES']) > 1
+    #DP = len(os.environ['CUDA_VISIBLE_DEVICES']) > 1
+    DP = len(args.CUDA_VISIBLE_DEVICES.split(',')) > 1
 
     set_seed()
 

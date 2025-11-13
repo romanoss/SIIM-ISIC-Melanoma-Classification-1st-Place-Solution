@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
-import geffnet
+#import geffnet
 from resnest.torch import resnest101
 from pretrainedmodels import se_resnext101_32x4d
+import timm
+import torch.nn.functional as F
 
 
 sigmoid = nn.Sigmoid()
@@ -26,6 +28,90 @@ class Swish_Module(nn.Module):
         return Swish.apply(x)
 
 
+class Effnet_Melanoma(nn.Module):
+    def __init__(self, enet_type, out_dim, n_meta_features=0, n_meta_dim=[512, 128], pretrained=True):
+        """
+        enet_type: str   -> e.g. 'tf_efficientnet_b3_ns', 'efficientnet_b1', 'convnext_tiny', etc.
+        out_dim: int     -> number of output classes
+        n_meta_features: int -> number of additional tabular/meta features
+        n_meta_dim: list[int] -> dimensions for meta MLP
+        """
+        super().__init__()
+
+        self.n_meta_features = n_meta_features
+        print("n_meta_features", n_meta_features)
+        print("n_meta_dim", n_meta_dim)
+
+        # -------------------------------
+        # Load model backbone from timm
+        # -------------------------------
+        self.enet = timm.create_model(enet_type, pretrained=pretrained)
+        
+        # remove classifier head (standardized in timm)
+        if hasattr(self.enet, "classifier") and isinstance(self.enet.classifier, nn.Linear):
+            in_ch = self.enet.classifier.in_features
+            self.enet.classifier = nn.Identity()
+        elif hasattr(self.enet, "head") and hasattr(self.enet.head, "fc"):
+            in_ch = self.enet.head.fc.in_features
+            self.enet.head.fc = nn.Identity()
+        elif hasattr(self.enet, "head") and hasattr(self.enet.head, "classifier"):
+            in_ch = self.enet.head.classifier.in_features
+            self.enet.head.classifier = nn.Identity()
+        else:
+            # generic fallback for models exposing num_features
+            in_ch = getattr(self.enet, "num_features", 1280)
+
+        # -------------------------------
+        # Meta feature branch (optional)
+        # -------------------------------
+        if n_meta_features > 0:
+            self.meta = nn.Sequential(
+                nn.Linear(n_meta_features, n_meta_dim[0]),
+                nn.BatchNorm1d(n_meta_dim[0]),
+                Swish_Module(),
+                nn.Dropout(p=0.3),
+                nn.Linear(n_meta_dim[0], n_meta_dim[1]),
+                nn.BatchNorm1d(n_meta_dim[1]),
+                Swish_Module(),
+            )
+            in_ch += n_meta_dim[1]
+
+        # -------------------------------
+        # Classification head
+        # -------------------------------
+        self.myfc = nn.Linear(in_ch, out_dim)
+
+        # multiple dropout averaging (as in the original)
+        self.dropouts = nn.ModuleList([nn.Dropout(0.5) for _ in range(5)])
+
+
+    def extract(self, x):
+        """Feature extraction from the image backbone."""
+        return self.enet.forward_features(x)
+
+
+    def forward(self, x, x_meta=None):
+        # Extract CNN features
+        x = self.extract(x)
+
+        # Some timm models return spatial maps, flatten them if needed
+        if x.ndim == 4:
+            x = F.adaptive_avg_pool2d(x, 1).flatten(1)
+
+        # Merge meta features if available
+        if self.n_meta_features > 0:
+            x_meta = self.meta(x_meta)
+            x = torch.cat((x, x_meta), dim=1)
+
+        # Multi-dropout head averaging
+        out = 0
+        for dropout in self.dropouts:
+            out += self.myfc(dropout(x))
+        out /= len(self.dropouts)
+
+        return out
+    
+"""
 class Effnet_Melanoma(nn.Module):
     def __init__(self, enet_type, out_dim, n_meta_features=0, n_meta_dim=[512, 128], pretrained=False):
         super(Effnet_Melanoma, self).__init__()
@@ -65,7 +151,7 @@ class Effnet_Melanoma(nn.Module):
                 out += self.myfc(dropout(x))
         out /= len(self.dropouts)
         return out
-
+"""
 
 class Resnest_Melanoma(nn.Module):
     def __init__(self, enet_type, out_dim, n_meta_features=0, n_meta_dim=[512, 128], pretrained=False):

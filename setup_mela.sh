@@ -3,6 +3,7 @@ chmod 777 start_train.sh
 
 pip install kaggle
 
+mkdir /root/.config/kaggle
 cp kaggle.json /root/.config/kaggle
 mkdir ./data
 cd ./data
