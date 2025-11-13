@@ -3,6 +3,7 @@
 # torchvision>=0.18.0
 
 albumentations==1.4.13
+albucore
 resnest==0.0.6b20220812
 #geffnet==1.0.2
 numpy>=1.26.0
