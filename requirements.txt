@@ -1,14 +1,21 @@
-torch==1.5.0a0+3bbb36e
-albumentations==0.4.6
-resnest==0.0.6b20200823
-geffnet==0.9.8
-numpy==1.18.1
-pandas==0.24.2
-apex==0.1
-opencv_python==4.4.0.42
-pretrainedmodels==0.7.4
-tqdm==4.31.1
-Pillow==7.2.0
-scikit_learn==0.23.2
-kaggle==1.5.6
--e git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git#egg=pytorch-gradual-warmup-lr
+# PyTorch (use preinstalled)
+# torch>=2.3.0
+# torchvision>=0.18.0
+
+albumentations==1.4.13
+resnest==0.0.6b20220812
+#geffnet==1.0.2
+numpy>=1.26.0
+pandas>=2.2.0
+opencv-python>=4.10.0.84
+tqdm>=4.66.5
+Pillow>=10.3.0
+scikit-learn>=1.5.1
+kaggle>=1.6.14
+
+# Warmup LR (git version)
+git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git
+
+# Optional / legacy helpers
+timm>=1.0.8     # recommended modern replacement for geffnet/pretrainedmodels
+# torchinfo>=1.8.0
