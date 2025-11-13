@@ -1,5 +1,9 @@
+chmod 777 setup_mela.sh
+chmod 777 start_train.sh
+
 pip install kaggle
-cd workspace
+
+cp kaggle.json /root/.config/kaggle
 mkdir ./data
 cd ./data
 for input_size in 384 #512 768 1024
