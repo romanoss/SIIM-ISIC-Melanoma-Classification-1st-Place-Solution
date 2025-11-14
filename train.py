@@ -301,6 +301,10 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
 
 def main():
 
+    print("args")
+    print(args)
+    print()
+    
     df, df_test, meta_features, n_meta_features, mel_idx = get_df(
         args.kernel_type,
         args.out_dim,
