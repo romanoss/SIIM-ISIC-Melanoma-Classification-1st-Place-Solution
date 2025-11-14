@@ -265,6 +265,7 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
     
     print(len(dataset_train), len(dataset_valid))
 
+    print("lr_finder")
     lr_finder(model, train_loader, optimizer, criterion, device, start_lr=1e-8, end_lr=10, num_iters=100)
 
     for epoch in range(1, args.n_epochs + 1):
