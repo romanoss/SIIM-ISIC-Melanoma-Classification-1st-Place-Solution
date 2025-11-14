@@ -22,6 +22,8 @@ from util import GradualWarmupSchedulerV2
 from dataset import get_df, get_transforms, MelanomaDataset
 from models import Effnet_Melanoma, Resnest_Melanoma, Seresnext_Melanoma
 
+from lr_find import lr_finder
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -199,11 +201,12 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         df_train = df[df['fold'] != fold]
         df_valid = df[df['fold'] == fold]
 
-    upsample_times=8
-    print(f"upsampling df_train melanomas times {upsample_times} len {len(df_train)}")
-    df_train = upsample_train(df_train, upsample_times=upsample_times) # orig psample_times=16
-    print(f"upsampled df_train melanomas times {upsample_times} len {len(df_train)}")
-    print("value counts", df_train["target"].value_counts())
+    upsample_times=0
+    if upsample_times > 0:
+        print(f"upsampling df_train melanomas times {upsample_times} len {len(df_train)}")
+        df_train = upsample_train(df_train, upsample_times=upsample_times) # orig psample_times=16
+        print(f"upsampled df_train melanomas times {upsample_times} len {len(df_train)}")
+    print("df_train target value counts", df_train["target"].value_counts())
     print()
 
     dataset_train = MelanomaDataset(df_train, 'train', meta_features, transform=transforms_train)
@@ -261,6 +264,8 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         )
     
     print(len(dataset_train), len(dataset_valid))
+
+    lr_finder(model, train_loader, optimizer, criterion, device, start_lr=1e-8, end_lr=10, num_iters=100)
 
     for epoch in range(1, args.n_epochs + 1):
         print(time.ctime(), f'Fold {fold}, Epoch {epoch}')
