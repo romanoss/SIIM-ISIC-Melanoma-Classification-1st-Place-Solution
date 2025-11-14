@@ -95,7 +95,7 @@ def train_epoch(model, loader, optimizer, scaler):
             meta = None
 
         # forward pass under autocast
-        with torch.cuda.amp.autocast(enabled=args.use_amp):
+        with torch.amp.autocast('cuda'):
             logits = model(data, meta) if args.use_meta else model(data)
             loss = criterion(logits, target)
 
@@ -152,7 +152,7 @@ def val_epoch(model, loader, mel_idx, is_ext=None, n_test=1, get_output=False):
                 logits = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 probs = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 for I in range(n_test):
-                    with torch.cuda.amp.autocast(enabled=args.use_amp):
+                    with torch.amp.autocast('cuda'):
                         l = model(get_trans(data, I), meta)
                     logits += l
                     probs += l.softmax(1)
@@ -161,7 +161,7 @@ def val_epoch(model, loader, mel_idx, is_ext=None, n_test=1, get_output=False):
                 logits = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 probs = torch.zeros((data.shape[0], args.out_dim)).to(device)
                 for I in range(n_test):
-                    with torch.cuda.amp.autocast(enabled=args.use_amp):
+                    with torch.amp.autocast('cuda'):
                         l = model(get_trans(data, I))
                     logits += l
                     probs += l.softmax(1)
@@ -244,7 +244,8 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
     #    model = nn.DataParallel(model)
 
     # Native PyTorch AMP setup
-    scaler = torch.cuda.amp.GradScaler(enabled=args.use_amp)
+    scaler = torch.amp.GradScaler('cuda')
+    
 
     # Optional DataParallel wrapping (multi-GPU)
     if DP:
