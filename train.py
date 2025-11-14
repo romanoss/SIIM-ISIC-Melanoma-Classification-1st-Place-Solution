@@ -113,7 +113,8 @@ def train_epoch(model, loader, optimizer, scaler):
             loss.backward()
             if args.image_size in [896, 576]:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
-                optimizer.step()
+                
+        optimizer.step()
 
         # bookkeeping
         loss_np = loss.detach().cpu().numpy()

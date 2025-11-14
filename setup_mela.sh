@@ -4,8 +4,10 @@ chmod 777 start_train.sh
 pip install kaggle
 pip install -U albumentations albucore
 
+mkdir /root/.config
 mkdir /root/.config/kaggle
-cp kaggle.json /root/.config/kaggle
+
+#cp kaggle.json /root/.config/kaggle
 mkdir ./data
 cd ./data
 for input_size in 384 #512 768 1024
