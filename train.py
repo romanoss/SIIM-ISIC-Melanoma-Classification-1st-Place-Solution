@@ -74,6 +74,53 @@ def upsample_train(df_train, upsample_times=16):
     return df_upsampled
 
 
+def add_synth_melas(df_train, synth_path = "./data/isic-2024-synthetic/images",  usefold = 0):
+    df_mela_synth = pd.DataFrame(columns = ["image_name", "patient_id", "sex", "age_approx", "anatom_site_general_challenge", "diagnosis", "benign_malignant", "target", "tfrecord", "width", "height"])
+    #img_path = f"{synth_path}/{fold}/hr"
+    #file_paths = [os.path.join(img_path, f) for f in os.listdir(img_path) if os.path.isfile(os.path.join(img_path, f))]
+
+    file_paths = []
+
+    for fold in range(5):  # 0 to 4
+        img_path = f"{synth_path}/{fold}/hr"
+        if not os.path.exists(img_path):
+            print(f"⚠️ Fold {fold} path not found: {img_path}")
+            continue
+    
+        fold_paths = [
+            os.path.join(img_path, f)
+            for f in os.listdir(img_path)
+            if os.path.isfile(os.path.join(img_path, f))
+        ]
+        file_paths.extend(fold_paths)
+        print(f"✅ Fold {fold}: {len(fold_paths)} images")
+
+    sexes = ["male", "female"]
+    sites = ["head/neck", "lower extremity", "upper extremity", "torso"]
+
+    for file in file_paths:
+        df_mela_synth.loc[len(df_mela_synth)] = {
+            "image_name": os.path.basename(file),
+            "patient_id": f"SYNTH_{random.randint(100000, 999999)}",
+            "sex": random.choice(sexes),
+            "age_approx": random.randint(30, 85),
+            "anatom_site_general_challenge": random.choice(sites),
+            "diagnosis": "melanoma",
+            "benign_malignant": "malignant",
+            "target": 1,
+            "tfrecord": 0,
+            "width": 512,
+            "height": 512,
+        }
+
+    df_mela_synth["filepath"] = file_paths
+    
+    df_synth_concat = pd.concat([df_train] + [df_mela_synth], ignore_index=True)
+    df_synth_concat = df_synth_concat.sample(frac=1.0, random_state=42).reset_index(drop=True)
+
+    return df_synth_concat
+
+
 def train_epoch(model, loader, optimizer, scaler):
     """
     Train one epoch using native PyTorch AMP (no Apex).
@@ -202,13 +249,17 @@ def run(fold, df, meta_features, n_meta_features, transforms_train, transforms_v
         df_train = df[df['fold'] != fold]
         df_valid = df[df['fold'] == fold]
 
-    upsample_times=0
+    upsample_times=4
     if upsample_times > 0:
         print(f"upsampling df_train melanomas times {upsample_times} len {len(df_train)}")
         df_train = upsample_train(df_train, upsample_times=upsample_times) # orig psample_times=16
         print(f"upsampled df_train melanomas times {upsample_times} len {len(df_train)}")
     print("df_train target value counts", df_train["target"].value_counts())
     print()
+
+    print(f"adding synth melanomas to df_train - len {len(df_train)}")
+    df_train = add_synth_melas(df_train, synth_path = "./data/isic-2024-synthetic/images",  usefold = 0)
+    print(f"added synth melanomas to df_train - len {len(df_train)}")
 
     dataset_train = MelanomaDataset(df_train, 'train', meta_features, transform=transforms_train)
     dataset_valid = MelanomaDataset(df_valid, 'valid', meta_features, transform=transforms_val)
@@ -304,7 +355,7 @@ def main():
     print("args")
     print(args)
     print()
-    
+
     df, df_test, meta_features, n_meta_features, mel_idx = get_df(
         args.kernel_type,
         args.out_dim,

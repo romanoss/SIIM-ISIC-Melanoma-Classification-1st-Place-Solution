@@ -17,6 +17,10 @@ do
   unzip -q jpeg-melanoma-${input_size}x${input_size}.zip -d jpeg-melanoma-${input_size}x${input_size}
   unzip -q jpeg-isic2019-${input_size}x${input_size}.zip -d jpeg-isic2019-${input_size}x${input_size}
   rm jpeg-melanoma-${input_size}x${input_size}.zip jpeg-isic2019-${input_size}x${input_size}.zip
+
+  kaggle datasets download -d ilya9711nov/isic-2024-synthetic
+  unzip -q isic-2024-synthetic.zip -d jisic-2024-synthetic
+  rm jisic-2024-synthetic.zip 
 done
 
 apt-get update -qq
