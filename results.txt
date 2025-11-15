@@ -1,0 +1,7 @@
+b3 ep10 9e-4 bs32 ups0 384
+Fold 0, Epoch 10, lr: 0.0002548, train loss: 0.53970, valid loss: 0.42357, acc: 85.9263, auc: 0.923663, auc_20: 0.857079.
+
+b3 ep10 9e-4 bs32 ups8 384 -> nan
+
+b3 ep10 5e-4 bs32 ups8 384 
+Fold 0, Epoch 6, lr: 0.0003585, train loss: 0.49314, valid loss: 0.49215, acc: 84.3817, auc: 0.952211, auc_20: 0.929082.
